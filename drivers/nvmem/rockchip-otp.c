@@ -259,6 +259,7 @@ static struct nvmem_config otp_config = {
 	.stride = 1,
 	.word_size = 1,
 	.reg_read = rockchip_otp_read,
+	.add_legacy_fixed_of_cells = true,
 };
 
 static const char * const px30_otp_clocks[] = {
@@ -273,7 +274,7 @@ static const struct rockchip_data px30_data = {
 };
 
 static const char * const rk3588_otp_clocks[] = {
-	"otp", "apb_pclk", "phy", "arb",
+	"otpc", "apb", "phy",
 };
 
 static const struct rockchip_data rk3588_data = {
@@ -360,6 +361,12 @@ static struct platform_driver rockchip_otp_driver = {
 	},
 };
 
-module_platform_driver(rockchip_otp_driver);
+/* Use subsys_initcall to ensure OTP probes before cpufreq/OPP setup */
+static int __init rockchip_otp_init(void)
+{
+	return platform_driver_register(&rockchip_otp_driver);
+}
+subsys_initcall(rockchip_otp_init);
+
 MODULE_DESCRIPTION("Rockchip OTP driver");
 MODULE_LICENSE("GPL v2");
