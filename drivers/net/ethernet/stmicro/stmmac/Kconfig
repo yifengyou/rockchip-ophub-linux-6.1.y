@@ -274,4 +274,13 @@ config STMMAC_PCI
 	  If you have a controller with this interface, say Y or M here.
 
 	  If unsure, say N.
+
+config DWMAC_MOTORCOMM
+	tristate "Motorcomm PCI DWMAC support"
+	depends on PCI && STMMAC_ETH
+	select MOTORCOMM_PHY
+	help
+	  This enables glue driver for Motorcomm DWMAC-based PCI Ethernet
+	  controllers. Currently only YT6801 is supported.
+
 endif

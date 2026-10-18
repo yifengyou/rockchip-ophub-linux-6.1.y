@@ -243,9 +243,33 @@ static int rockchip_pcie_clk_init(struct rockchip_pcie *rockchip)
 static int rockchip_pcie_resource_get(struct platform_device *pdev,
 				      struct rockchip_pcie *rockchip)
 {
-	rockchip->apb_base = devm_platform_ioremap_resource_byname(pdev, "apb");
-	if (IS_ERR(rockchip->apb_base))
-		return PTR_ERR(rockchip->apb_base);
+	struct resource *res;
+
+	/* The RK3588 vendor DTS uses "pcie-apb"/"pcie-dbi" reg-names while
+	 * the mainline RK3568 DTS uses "apb"/"dbi".  Try the vendor names
+	 * first and fall back to the mainline ones so both DTs work.
+	 */
+	rockchip->apb_base = devm_platform_ioremap_resource_byname(pdev,
+								   "pcie-apb");
+	if (IS_ERR(rockchip->apb_base)) {
+		rockchip->apb_base = devm_platform_ioremap_resource_byname(pdev,
+									   "apb");
+		if (IS_ERR(rockchip->apb_base))
+			return PTR_ERR(rockchip->apb_base);
+	}
+
+	/* Map DBI ourselves so dw_pcie_host_init() doesn't need a "dbi"
+	 * reg-name (the RK3588 vendor DTS names it "pcie-dbi").
+	 */
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "pcie-dbi");
+	if (!res)
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dbi");
+	if (!res)
+		return dev_err_probe(&pdev->dev, -ENODEV,
+				     "missing dbi reg region\n");
+	rockchip->pci.dbi_base = devm_pci_remap_cfg_resource(&pdev->dev, res);
+	if (IS_ERR(rockchip->pci.dbi_base))
+		return PTR_ERR(rockchip->pci.dbi_base);
 
 	rockchip->rst_gpio = devm_gpiod_get_optional(&pdev->dev, "reset",
 						     GPIOD_OUT_LOW);
@@ -362,6 +386,7 @@ disable_regulator:
 
 static const struct of_device_id rockchip_pcie_of_match[] = {
 	{ .compatible = "rockchip,rk3568-pcie", },
+	{ .compatible = "rockchip,rk3588-pcie", },
 	{},
 };
 
