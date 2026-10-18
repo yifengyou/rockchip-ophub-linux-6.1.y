@@ -108,6 +108,15 @@ config PHY_ROCKCHIP_USB
 	help
 	  Enable this to support the Rockchip USB 2.0 PHY.
 
+config PHY_ROCKCHIP_USBDP
+	tristate "Rockchip USBDP COMBO PHY Driver"
+	depends on ARCH_ROCKCHIP && OF
+	select GENERIC_PHY
+	select TYPEC
+	help
+	  Enable this to support the Rockchip USBDP combo PHY
+	  with Samsung IP block.
+
 config PHY_ROCKCHIP_SAMSUNG_HDPTX
 	tristate "Rockchip Samsung HDMI/eDP Combo PHY driver"
 	depends on (ARCH_ROCKCHIP || COMPILE_TEST) && OF
