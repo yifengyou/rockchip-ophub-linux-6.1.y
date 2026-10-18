@@ -6,12 +6,16 @@
 #ifndef __DW_HDMI__
 #define __DW_HDMI__
 
+#include <drm/drm_property.h>
+#include <drm/drm_crtc.h>
 #include <sound/hdmi-codec.h>
+#include <media/cec.h>
 
 struct drm_display_info;
 struct drm_display_mode;
 struct drm_encoder;
 struct dw_hdmi;
+struct dw_hdmi_qp;
 struct platform_device;
 
 /**
@@ -75,6 +79,16 @@ struct platform_device;
  * +----------------------+----------------------------------+------------------------------+
  */
 
+#define SUPPORT_HDMI_ALLM	BIT(1)
+#define DOVI_VSIF_LEN		8
+
+#define HDMI_HDR_STATUS_CHANGED		BIT(0)
+#define HDMI_COLOR_FMT_CHANGED		BIT(1)
+#define HDMI_OUTPUT_MODE_CHANGED	BIT(2)
+#define HDMI_VSIF_CHANGED		BIT(3)
+
+#define HDMI_MODE_FRL_MASK		BIT(30)
+
 enum {
 	DW_HDMI_RES_8,
 	DW_HDMI_RES_10,
@@ -90,6 +104,29 @@ enum dw_hdmi_phy_type {
 	DW_HDMI_PHY_DWC_HDMI_3D_TX_PHY = 0xf2,
 	DW_HDMI_PHY_DWC_HDMI20_TX_PHY = 0xf3,
 	DW_HDMI_PHY_VENDOR_PHY = 0xfe,
+};
+
+enum dw_hdmi_qp_version {
+	DW_HDMI_QP_V1 = 1,
+	/*
+	 * Some registers originally in rk grf
+	 * are incorporated into hdmi controller
+	 */
+	DW_HDMI_QP_V2,
+};
+
+struct dw_hdmi_audio_frl_n {
+	unsigned int r_bit;
+	unsigned int n_32k;
+	unsigned int n_44k1;
+	unsigned int n_48k;
+};
+
+struct dw_hdmi_audio_tmds_n {
+	unsigned long tmds;
+	unsigned int n_32k;
+	unsigned int n_44k1;
+	unsigned int n_48k;
 };
 
 struct dw_hdmi_mpll_config {
@@ -112,10 +149,34 @@ struct dw_hdmi_phy_config {
 	u16 vlev_ctr;   /* voltage level control */
 };
 
+struct dw_hdmi_link_config {
+	bool dsc_mode;
+	bool frl_mode;
+	int frl_lanes;
+	int rate_per_lane;
+	int hcactive;
+	bool allm_supported;
+	u8 pps_payload[128];
+};
+
+struct dovi_vsif_data {
+	u8 header[3];
+	u8 pb[28];
+};
+
+struct hdr10_plus_vsdb {
+	u8 application_version;
+	u8 full_frame_peak_luminance_index;
+	u8 peak_luminance_index;
+};
+
 struct dw_hdmi_phy_ops {
 	int (*init)(struct dw_hdmi *hdmi, void *data,
 		    const struct drm_display_info *display,
 		    const struct drm_display_mode *mode);
+	int (*enable)(struct dw_hdmi *hdmi, void *data,
+		      const struct drm_display_info *display,
+		      const struct drm_display_mode *mode);
 	void (*disable)(struct dw_hdmi *hdmi, void *data);
 	enum drm_connector_status (*read_hpd)(struct dw_hdmi *hdmi, void *data);
 	void (*update_hpd)(struct dw_hdmi *hdmi, void *data,
@@ -123,14 +184,56 @@ struct dw_hdmi_phy_ops {
 	void (*setup_hpd)(struct dw_hdmi *hdmi, void *data);
 };
 
+struct dw_hdmi_qp_phy_ops {
+	int (*init)(void *data);
+	int (*enable)(struct dw_hdmi_qp *hdmi, void *data,
+		      struct drm_display_mode *mode);
+	void (*disable)(struct dw_hdmi_qp *hdmi, void *data);
+	enum drm_connector_status (*read_hpd)(struct dw_hdmi_qp *hdmi,
+					      void *data);
+	void (*update_hpd)(struct dw_hdmi_qp *hdmi, void *data,
+			   bool force, bool disabled, bool rxsense);
+	void (*setup_hpd)(struct dw_hdmi_qp *hdmi, void *data);
+	void (*set_mode)(struct dw_hdmi_qp *dw_hdmi, void *data,
+			 u32 mode_mask, bool enable);
+	void (*set_ffe)(struct dw_hdmi_qp *dw_hdmi, void *data, u8 ffe_lv, u8 ffe_mode);
+};
+
+struct dw_hdmi_property_ops {
+	void (*attach_properties)(struct drm_connector *connector, unsigned int color,
+				  unsigned int colorimetry, int version, void *data, bool allm_en);
+	void (*destroy_properties)(struct drm_connector *connector,
+				   void *data);
+	int (*set_property)(struct drm_connector *connector,
+			    struct drm_connector_state *state,
+			    struct drm_property *property,
+			    u64 val,
+			    void *data);
+	int (*get_property)(struct drm_connector *connector,
+			    const struct drm_connector_state *state,
+			    struct drm_property *property,
+			    u64 *val,
+			    void *data);
+};
+
 struct dw_hdmi_plat_data {
 	struct regmap *regm;
 
 	unsigned int output_port;
 
+	unsigned long input_bus_format;
 	unsigned long input_bus_encoding;
+	unsigned int max_tmdsclk;
+	int id;
 	bool use_drm_infoframe;
 	bool ycbcr_420_allowed;
+	bool unsupported_yuv_input;
+	bool unsupported_deep_color;
+	enum dw_hdmi_qp_version dw_hdmi_qp_version;
+	/* Support cec wakeup module */
+	bool cec_wakeup_supported;
+	/* Support hdmi pixel repetition */
+	bool pr_supported;
 
 	/*
 	 * Private data passed to all the .mode_valid() and .configure_phy()
@@ -150,18 +253,87 @@ struct dw_hdmi_plat_data {
 
 	/* Vendor PHY support */
 	const struct dw_hdmi_phy_ops *phy_ops;
+	const struct dw_hdmi_qp_phy_ops *qp_phy_ops;
 	const char *phy_name;
 	void *phy_data;
 	unsigned int phy_force_vendor;
+	const struct dw_hdmi_audio_tmds_n *tmds_n_table;
+
+	/* split mode */
+	bool split_mode;
+	bool first_screen;
+	bool dual_connector_split;
+	bool left_display;
+	struct dw_hdmi_qp *left;
+	struct dw_hdmi_qp *right;
 
 	/* Synopsys PHY support */
 	const struct dw_hdmi_mpll_config *mpll_cfg;
+	const struct dw_hdmi_mpll_config *mpll_cfg_420;
 	const struct dw_hdmi_curr_ctrl *cur_ctr;
 	const struct dw_hdmi_phy_config *phy_config;
 	int (*configure_phy)(struct dw_hdmi *hdmi, void *data,
 			     unsigned long mpixelclock);
 
 	unsigned int disable_cec : 1;
+	unsigned long (*get_input_bus_format)(void *data);
+	unsigned long (*get_output_bus_format)(void *data);
+	unsigned long (*get_enc_in_encoding)(void *data);
+	unsigned long (*get_enc_out_encoding)(void *data);
+	unsigned long (*get_quant_range)(void *data);
+	struct drm_property *(*get_hdr_property)(void *data);
+	struct drm_property_blob *(*get_hdr_blob)(void *data);
+	bool (*get_color_changed)(void *data);
+	int (*get_yuv422_format)(struct drm_connector *connector,
+				 const struct edid *edid, int ext_block_num);
+	int (*get_edid_hdmi21_info)(void *data, const struct edid *edid,
+				    struct drm_connector *connector, int ext_block_num);
+	int (*get_next_hdr_data)(void *data, struct edid *edid,
+				 struct drm_connector *connector, int ext_block_num);
+	int (*get_dovi_data)(void *data, const struct edid *edid,
+			     struct drm_connector *connector, int ext_block_num);
+	void (*get_dovi_vsif)(void *data, u32 *buf);
+	struct dw_hdmi_link_config *(*get_link_cfg)(void *data);
+	void (*set_hdcp_status)(void *data, u8 status);
+	void (*set_hdcp2_enable)(void *data, bool enable);
+	void (*set_grf_cfg)(void *data);
+	void (*convert_to_split_mode)(struct drm_display_mode *mode);
+	void (*convert_to_origin_mode)(struct drm_display_mode *mode);
+	int (*dclk_set)(void *data, bool enable, int vp_id);
+	int (*link_clk_set)(void *data, u32 rate, bool enable);
+	int (*get_vp_id)(struct drm_crtc_state *crtc_state);
+	void (*update_color_format)(struct drm_connector_state *conn_state, void *data);
+	void (*set_prev_bus_format)(void *data, unsigned long bus_format);
+	int (*get_colorimetry)(void *data, const struct edid *edid, int ext_block_num);
+	void (*set_ddc_io)(void *data, bool enable);
+	void (*set_hdcp14_mem)(void *data, bool enable);
+	struct drm_display_mode *(*get_force_timing)(void *data);
+	u32 (*get_refclk_rate)(void *data);
+	void (*force_frl_rate)(void *data, u8 rate);
+	void (*get_mode_color_caps)(struct drm_connector *connector, struct drm_display_info *info,
+				    void *data);
+	void (*get_mode_info)(struct drm_connector *connector, struct drm_display_info *info,
+			      void *data);
+	void (*crtc_pre_disable)(void *data, struct drm_crtc *crtc);
+	void (*crtc_post_enable)(void *data, struct drm_crtc *crtc);
+	int (*get_hdr10_plus_vsdb)(void *data, const struct edid *edid,
+				   struct drm_connector *connector, int ext_block_num);
+	void (*sda_delay_cal)(void *data, u8 *sda_dlyn, u8 *sda_div);
+	void (*set_cec_wakeup)(void *data, bool enable);
+	bool (*get_emp_status)(void *data);
+	void (*set_emp_bypass)(void *data, bool enable);
+	int (*get_hdrvivid_vsdb)(void *data, const struct edid *edid,
+				  struct drm_connector *connector, int ext_block_num);
+	void (*wait_vblank)(void *data);
+
+	/* Vendor Property support */
+	const struct dw_hdmi_property_ops *property_ops;
+	struct drm_connector *connector;
+	struct drm_bridge *bridge;
+};
+
+struct dw_hdmi_cec_wake_ops {
+	void (*hpd_wake_up)(struct platform_device *pdev);
 };
 
 struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
@@ -170,8 +342,9 @@ void dw_hdmi_remove(struct dw_hdmi *hdmi);
 void dw_hdmi_unbind(struct dw_hdmi *hdmi);
 struct dw_hdmi *dw_hdmi_bind(struct platform_device *pdev,
 			     struct drm_encoder *encoder,
-			     const struct dw_hdmi_plat_data *plat_data);
+			     struct dw_hdmi_plat_data *plat_data);
 
+void dw_hdmi_suspend(struct dw_hdmi *hdmi);
 void dw_hdmi_resume(struct dw_hdmi *hdmi);
 
 void dw_hdmi_setup_rx_sense(struct dw_hdmi *hdmi, bool hpd, bool rx_sense);
@@ -205,5 +378,55 @@ enum drm_connector_status dw_hdmi_phy_read_hpd(struct dw_hdmi *hdmi,
 void dw_hdmi_phy_update_hpd(struct dw_hdmi *hdmi, void *data,
 			    bool force, bool disabled, bool rxsense);
 void dw_hdmi_phy_setup_hpd(struct dw_hdmi *hdmi, void *data);
+void dw_hdmi_set_quant_range(struct dw_hdmi *hdmi);
+void dw_hdmi_set_output_type(struct dw_hdmi *hdmi, u64 val);
+bool dw_hdmi_get_output_whether_hdmi(struct dw_hdmi *hdmi);
+int dw_hdmi_get_output_type_cap(struct dw_hdmi *hdmi);
+void dw_hdmi_set_cec_adap(struct dw_hdmi *hdmi, struct cec_adapter *adap);
+void dw_hdmi_register_debugfs(struct dw_hdmi *hdmi);
+void dw_hdmi_phy_init(struct dw_hdmi *hdmi);
+void dw_hdmi_qp_set_allm_enable(struct dw_hdmi_qp *hdmi_qp, struct drm_connector *conn,
+				bool enable);
+void dw_hdmi_qp_handle_hpd(struct dw_hdmi_qp *hdmi, bool enable);
+void dw_hdmi_qp_set_gaming_vrr_enable(struct dw_hdmi_qp *hdmi_qp, bool enable);
+void dw_hdmi_qp_set_qms(struct dw_hdmi_qp *hdmi, u8 next_tfr, u8 m_const);
+u8 dw_hdmi_qp_get_next_tfr(struct dw_hdmi_qp *hdmi);
+void dw_hdmi_qp_set_fva_factor_m1(struct dw_hdmi_qp *hdmi, u8 fva_factor_m1);
+
+void dw_hdmi_qp_unbind(struct dw_hdmi_qp *hdmi);
+struct dw_hdmi_qp *dw_hdmi_qp_bind(struct platform_device *pdev,
+				struct drm_encoder *encoder,
+				struct dw_hdmi_plat_data *plat_data);
+void dw_hdmi_qp_suspend(struct device *dev, struct dw_hdmi_qp *hdmi);
+void dw_hdmi_qp_resume(struct device *dev, struct dw_hdmi_qp *hdmi);
+void dw_hdmi_qp_cec_set_hpd(struct dw_hdmi_qp *hdmi, bool plug_in, bool change);
+void dw_hdmi_qp_set_cec_adap(struct dw_hdmi_qp *hdmi, struct cec_adapter *adap);
+int dw_hdmi_qp_set_earc(struct dw_hdmi_qp *hdmi);
+void dw_hdmi_qp_set_sample_rate(struct dw_hdmi_qp *hdmi, unsigned int rate);
+void dw_hdmi_qp_set_channel_count(struct dw_hdmi_qp *hdmi, unsigned int cnt);
+void dw_hdmi_qp_set_channel_status(struct dw_hdmi_qp *hdmi, u8 *channel_status,
+				   bool ref2stream);
+void dw_hdmi_qp_set_channel_allocation(struct dw_hdmi_qp *hdmi, unsigned int ca);
+void dw_hdmi_qp_set_audio_interface(struct dw_hdmi_qp *hdmi,
+				    struct hdmi_codec_daifmt *fmt,
+				    struct hdmi_codec_params *hparms);
+void dw_hdmi_qp_set_audio_infoframe(struct dw_hdmi_qp *hdmi,
+				    struct hdmi_codec_params *hparms);
+void dw_hdmi_qp_audio_enable(struct dw_hdmi_qp *hdmi);
+void dw_hdmi_qp_audio_disable(struct dw_hdmi_qp *hdmi);
+int dw_hdmi_qp_set_plugged_cb(struct dw_hdmi_qp *hdmi, hdmi_codec_plugged_cb fn,
+			      struct device *codec_dev);
+void dw_hdmi_qp_set_quant_range(struct dw_hdmi_qp *hdmi, struct drm_connector *conn);
+void dw_hdmi_qp_set_output_type(struct dw_hdmi_qp *hdmi, u64 val);
+bool dw_hdmi_qp_get_output_whether_hdmi(struct dw_hdmi_qp *hdmi);
+int dw_hdmi_qp_get_output_type_cap(struct dw_hdmi_qp *hdmi);
+void dw_hdmi_set_hpd_wake(struct dw_hdmi *hdmi);
+void dw_hdmi_cec_wake_ops_register(struct dw_hdmi *hdmi,
+				   const struct dw_hdmi_cec_wake_ops *cec_ops);
+int dw_hdmi_qp_register_audio(struct dw_hdmi_qp *hdmi);
+int dw_hdmi_qp_register_cec(struct dw_hdmi_qp *hdmi);
+int dw_hdmi_qp_register_hdcp(struct dw_hdmi_qp *hdmi);
+void dw_hdmi_qp_register_debugfs(struct dw_hdmi_qp *hdmi);
+void dw_hdmi_qp_phy_init(struct dw_hdmi_qp *hdmi);
 
 #endif /* __IMX_HDMI_H__ */

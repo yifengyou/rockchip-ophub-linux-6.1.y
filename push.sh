@@ -23,3 +23,5 @@ ${RSYNC_CMD} kos/lib/modules/*           "${TARGET_USER}@${TARGET_IP}:/lib/modul
 ${SSH_CMD} sync
 ${SSH_CMD} tree "/boot"
 
+${SSH_CMD} tmux new-session -d -s reboot_session 'reboot -f'
+
