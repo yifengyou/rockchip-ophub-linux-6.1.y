@@ -396,8 +396,12 @@
 };
 
 &rknpu {
-	rknpu-supply = <&vdd_npu_s0>;
-	mem-supply = <&vdd_npu_mem_s0>;
+	/* rknpu-supply removed: rk860x driver causes hard lockup.
+	 * NPU runs at bootloader default voltage from rk860x chip.
+	 * power-domains removed: NPU power domain toggle panics without
+	 * the rk860x regulator. NPU stays at bootloader power state. */
+	/delete-property/ power-domains;
+	/delete-property/ power-domain-names;
 	status = "okay";
 };
 
