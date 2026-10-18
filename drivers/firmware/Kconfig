@@ -214,6 +214,13 @@ config MTK_ADSP_IPC
 config QCOM_SCM
 	tristate
 
+config ROCKCHIP_SIP
+	tristate "Rockchip SIP interface"
+	depends on HAVE_ARM_SMCCC && ARCH_ROCKCHIP
+	help
+	  Say Y here if you want to enable SIP callbacks for Rockchip platforms
+	  This option enables support for communicating with the ATF.
+
 config QCOM_SCM_DOWNLOAD_MODE_DEFAULT
 	bool "Qualcomm download mode enabled by default"
 	depends on QCOM_SCM

@@ -1852,7 +1852,10 @@ static struct rk_priv_data *rk_gmac_setup(struct platform_device *pdev,
 	bsp_priv->grf = syscon_regmap_lookup_by_phandle(dev->of_node,
 							"rockchip,grf");
 	bsp_priv->php_grf = syscon_regmap_lookup_by_phandle(dev->of_node,
-							    "rockchip,php-grf");
+							    "rockchip,php_grf");
+	if (IS_ERR(bsp_priv->php_grf))
+		bsp_priv->php_grf = syscon_regmap_lookup_by_phandle(dev->of_node,
+								    "rockchip,php-grf");
 	bsp_priv->xpcs = syscon_regmap_lookup_by_phandle(dev->of_node,
 							 "rockchip,xpcs");
 	if (!IS_ERR(bsp_priv->xpcs)) {

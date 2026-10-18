@@ -1150,6 +1150,7 @@ struct clk_fractional_divider {
 #define CLK_FRAC_DIVIDER_ZERO_BASED		BIT(0)
 #define CLK_FRAC_DIVIDER_BIG_ENDIAN		BIT(1)
 #define CLK_FRAC_DIVIDER_POWER_OF_TWO_PS	BIT(2)
+#define CLK_FRAC_DIVIDER_NO_LIMIT		BIT(3)
 
 struct clk *clk_register_fractional_divider(struct device *dev,
 		const char *name, const char *parent_name, unsigned long flags,
