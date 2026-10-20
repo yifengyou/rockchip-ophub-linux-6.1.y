@@ -4,4 +4,4 @@
 # (e.g. drivers/soc/rockchip/rk_camera_sensor_info.h) that are absent in this
 # ophub-based tree, so we restrict dtbs to the target board to avoid pulling
 # in broken dependencies for unrelated boards.
-dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-aiot-3588ied.dtb
+dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-aiot-3588a.dtb
